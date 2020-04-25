@@ -9,14 +9,45 @@ pub trait InactiveAudioSource {
     fn activate(self) -> Result<Self::ActiveType, Error>;
 }
 
-pub trait ActiveAudioSource: Iterator<Item = StereoSample> {
+pub trait ActiveAudioSource {
     type InactiveType;
     fn deactivate(self) -> Result<Self::InactiveType, Error>;
     fn cur_time(&self) -> u64;
-    fn next_to(&mut self, timeout: Duration) -> Result<StereoSample, Error>;
+    fn recv(&mut self) -> Result<StereoSample, Error>;
+    fn recv_timeout(&mut self, timeout: Duration) -> Result<StereoSample, Error>;
     #[inline]
     fn try_recv(&mut self) -> Result<StereoSample, Error> {
-        self.next_to(Duration::from_secs(0))
+        self.recv_timeout(Duration::from_secs(0))
+    }
+    fn iter(&mut self) -> Iter<'_, Self>
+        where Self: Sized
+    {
+        Iter { src: self }
+    }
+    fn try_iter(&mut self) -> TryIter<'_, Self> 
+        where Self: Sized
+    {
+        TryIter { src: self }
+    }
+}
+pub struct Iter<'a, T: ActiveAudioSource> {
+    src: &'a mut  T 
+}
+
+impl<T: ActiveAudioSource> Iterator for Iter<'_, T>{
+    type Item = StereoSample;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.src.recv().ok()
+    }
+}
+
+pub struct TryIter<'a, T: ActiveAudioSource> {
+    src: &'a mut T 
+}
+impl<T: ActiveAudioSource> Iterator for TryIter<'_, T>{
+    type Item = StereoSample;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.src.try_recv().ok()
     }
 }
 

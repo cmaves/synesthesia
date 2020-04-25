@@ -4,19 +4,21 @@ version = "0.1.0"
 authors = ["Curtis Maves <curtismaves@gmail.com>"]
 edition = "2018"
 
+[[bin]]
+name = "flatstack"
+required-features = ["jack","ham","rpi", "clap"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["ham-xpt"]
+default = []
 
-control = ["ecp"]
-ham-xpt = ["control", "ham"]
-jack-source = ["jack"]
-
+rpi = ["ecp/rpi"]
 
 [dependencies]
-ecp = {git="https://github.com/cmaves/ecp.git", optional=true }
+ecp = {git="https://github.com/cmaves/ecp.git"}
 ham = {git="https://github.com/cmaves/ham.git", optional=true }
 jack = { version = "0.6.0", optional = true }
+clap = { version = "2.33.0", optional = true }
 rustfft = "3.0.1"
 lazy_static = "1.4.0"

@@ -1,33 +1,32 @@
 pub mod audio;
-#[cfg(feature = "control")]
 pub mod control;
-#[cfg(feature = "jack-source")]
+#[cfg(feature = "jack")]
 pub mod jack_src;
 pub mod midi;
 
-#[cfg(feature = "jack-source")]
-use jack;
-#[cfg(feature = "control")]
+#[cfg(any(feature = "ecp", feature = "rpi"))]
 use ecp;
+#[cfg(feature = "jack")]
+use jack;
 
 #[derive(Debug)]
 pub enum Error {
     Unrecoverable(String),
     Timeout(String),
-    #[cfg(feature = "jack-source")]
+    #[cfg(feature = "jack")]
     Jack(jack::Error),
-	#[cfg(feature = "control")]
-	Ecp(ecp::Error)
+    #[cfg(any(feature = "ecp", feature = "rpi"))]
+    Ecp(ecp::Error),
 }
 
-#[cfg(feature = "jack-source")]
+#[cfg(feature = "jack")]
 impl From<jack::Error> for Error {
     fn from(err: jack::Error) -> Self {
         Error::Jack(err)
     }
 }
 
-#[cfg(feature = "control")]
+#[cfg(any(feature = "ecp", feature = "rpi"))]
 impl From<ecp::Error> for Error {
     fn from(err: ecp::Error) -> Self {
         Error::Ecp(err)

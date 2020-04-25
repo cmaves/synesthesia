@@ -8,9 +8,12 @@ use std::time::Duration;
 
 pub struct EventHandler;
 impl NotificationHandler for EventHandler {
-#[inline]
+    #[inline]
     fn xrun(&mut self, client: &Client) -> Control {
-        eprintln!("Overrun occured at {}", client.frames_to_time(client.frame_time()));
+        eprintln!(
+            "Overrun occured at {}",
+            client.frames_to_time(client.frame_time())
+        );
         Control::Continue
     }
 }
@@ -47,20 +50,17 @@ impl InactiveAudioSource for Client {
     fn activate(self) -> Result<Self::ActiveType, Error> {
         let left = self.register_port("synesthesia_left", AudioIn)?;
         let right = self.register_port("synesthesia_right", AudioIn)?;
-        spawn(|| {
-            unimplemented!();
-        });
         let (sender, recv) = mpsc::sync_channel(1);
         let handler = FrameHandler {
             sample: StereoSample::new(
-                256,
+                768,
                 self.sample_rate() as u32,
                 self.frames_to_time(self.frame_time()),
             ),
             left,
             right,
             sender,
-            sample_size: 256,
+            sample_size: 768,
         };
         let a_client = self.activate_async(EventHandler, handler)?;
         Ok(JackSource { a_client, recv })
@@ -69,13 +69,6 @@ impl InactiveAudioSource for Client {
 pub struct JackSource {
     a_client: AsyncClient<EventHandler, FrameHandler>,
     recv: mpsc::Receiver<StereoSample>,
-}
-impl Iterator for JackSource {
-    type Item = StereoSample;
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.recv.recv().ok()
-    }
 }
 impl ActiveAudioSource for JackSource {
     type InactiveType = Client;
@@ -88,10 +81,15 @@ impl ActiveAudioSource for JackSource {
         let client = self.a_client.as_client();
         client.frames_to_time(client.frame_time())
     }
-    fn next_to(&mut self, timeout: Duration) -> Result<StereoSample, Error> {
+    fn recv(&mut self) -> Result<StereoSample, Error> {
+        self.recv.recv().map_err(|_| Error::Unrecoverable("Audio producer is disconnected".to_string()))
+    }
+    fn recv_timeout(&mut self, timeout: Duration) -> Result<StereoSample, Error> {
         self.recv.recv_timeout(timeout).map_err(|x| match x {
             mpsc::RecvTimeoutError::Timeout => Error::Timeout("Audio timed out".to_string()),
-            mpsc::RecvTimeoutError::Disconnected => Error::Unrecoverable("Audio producer is disconnected".to_string()),
+            mpsc::RecvTimeoutError::Disconnected => {
+                Error::Unrecoverable("Audio producer is disconnected".to_string())
+            }
         })
     }
 }
