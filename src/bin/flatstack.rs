@@ -1,16 +1,19 @@
-use clap::{App, Arg,ArgMatches};
-use ecp::channel;
+use clap::{App, Arg, ArgMatches};
 use ecp::color::Color;
 use ecp::controller::{rs_ws281x, Renderer};
-use ham;
+use ecp::{channel, Sender};
+use gpio_cdev::Chip;
+use ham::rfm69::Rfm69;
+use ham::IntoPacketSender;
 use jack;
-use std::num::{NonZeroU8,NonZeroU16};
+use spidev::Spidev;
+use std::num::{NonZeroU16, NonZeroU8};
 use std::str::FromStr;
-use std::time::{Duration,Instant};
-use std::thread::{Builder,sleep};
+use std::thread::Builder;
+use std::time::{Duration, Instant};
 use synesthesia;
 use synesthesia::audio::InactiveAudioSource;
-use synesthesia::control::{AudioVisualizer, Algorithm, Effect};
+use synesthesia::control::{Algorithm, AudioVisualizer, Effect};
 
 enum Src {
     Jack(jack::Client),
@@ -21,7 +24,7 @@ enum Mode {
     Err,
 }
 pub fn main() {
-    #[cfg(any(feature = "ecp", feature="rpi"))]
+    #[cfg(any(feature = "ecp", feature = "rpi"))]
     eprintln!("feature enabled");
     let parser = parser();
     let args = parser.get_matches();
@@ -39,39 +42,69 @@ pub fn main() {
         _ => unimplemented!(),
     }
 }
-pub fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
+fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
     match args.value_of("mode").unwrap() {
         "local" => {
             let (sender, recv) = channel(2);
             let pin = u8::from_str(args.value_of("led_pin").unwrap()).unwrap() as i32;
             let count = u16::from_str(args.value_of("led_count").unwrap()).unwrap() as i32;
-            Builder::new().name("rendering".to_string()).spawn(move || {
-                let channel = rs_ws281x::ChannelBuilder::new()
-                    .pin(pin)
-                    .strip_type(rs_ws281x::StripType::Ws2812)
-                    .count(count)
-                    .brightness(255)
-                    .build();
-                let ctl = rs_ws281x::ControllerBuilder::new()
-                    .freq(800_000)
-                    .channel(0, channel)
-                    .build()
-                    .unwrap();
-                let start = Instant::now(); 
-                let mut renderer =Renderer::new(recv, ctl);
-                renderer.blend = 3;
-                renderer.verbose = true;
-                renderer.color_map[2] = Color::YELLOW;
-                renderer.color_map[3] = Color::GREEN;
-                renderer.color_map[4] = Color::BLUE;
-                panic!("Rendering thread quit: {:?}", renderer.update_leds_loop(60.0));
-            });
-            let mut av = AudioVisualizer::new(src, Effect::Stereo4FlatStack(Algorithm::Quadratic, false)).unwrap();
-            av.senders.push(Box::new(sender));
-            av.process_loop();
+            let brightness =
+                u8::from_str(args.value_of("brightness").unwrap()).unwrap() as f32 / 255.0;
+            Builder::new()
+                .name("rendering".to_string())
+                .spawn(move || {
+                    let channel = rs_ws281x::ChannelBuilder::new()
+                        .pin(pin)
+                        .strip_type(rs_ws281x::StripType::Ws2812)
+                        .count(count)
+                        .brightness(255)
+                        .build();
+                    let ctl = rs_ws281x::ControllerBuilder::new()
+                        .freq(800_000)
+                        .channel(0, channel)
+                        .build()
+                        .unwrap();
+                    let start = Instant::now();
+                    let mut renderer = Renderer::new(recv, ctl);
+                    renderer.blend = 3;
+                    renderer.verbose = true;
+                    renderer.color_map[2] = Color::YELLOW;
+                    renderer.color_map[3] = Color::GREEN;
+                    renderer.color_map[4] = Color::BLUE;
+                    for color in renderer.color_map[0..5].iter_mut() {
+                        *color *= brightness;
+                    }
+                    panic!(
+                        "Rendering thread quit: {:?}",
+                        renderer.update_leds_loop(60.0)
+                    );
+                })
+                .unwrap();
+            start_av(src, sender);
+        }
+        "ham" => {
+            let mut chip = Chip::new("/dev/gpiochip0").unwrap();
+            let en = chip
+                .get_line(u32::from_str(args.value_of("en").unwrap()).unwrap())
+                .unwrap();
+            let rst = chip
+                .get_line(u32::from_str(args.value_of("rst").unwrap()).unwrap())
+                .unwrap();
+            let spi = Spidev::open(args.value_of("spi").unwrap()).unwrap();
+            let mut rfm = Rfm69::new(rst, en, spi).unwrap();
+            rfm.set_bitrate(45000).unwrap();
+            let sender = rfm.into_packet_sender(1).unwrap();
+            start_av(src, sender);
         }
         _ => unimplemented!(),
     }
+}
+
+fn start_av<S: InactiveAudioSource, T: Sender + 'static>(src: S, sender: T) {
+    let mut av =
+        AudioVisualizer::new(src, Effect::Stereo4FlatStack(Algorithm::Quadratic, false)).unwrap();
+    av.senders.push(Box::new(sender));
+    av.process_loop();
 }
 
 fn parser<'a, 'b>() -> App<'a, 'b> {
@@ -127,23 +160,58 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 .possible_values(&["local", "ham"])
                 .default_value("local"),
         )
-        .arg(Arg::with_name("led_pin")
-            .short("p")
-            .long("pin")
-            .value_name("PIN")
-            .takes_value(true)
-            .validator(|s| 
-                u8::from_str(&s).map(|_| ()).map_err(|e| format!("{:?}", e))
-            )
-            .default_value("18")
-            )
-        .arg(Arg::with_name("led_count")
-            .short("c")
-            .long("count")
-            .value_name("COUNT")
-            .takes_value(true)
-            .validator(|s|  NonZeroU16::from_str(&s).map(|_| ()).map_err(|e| format!("{:?}", e)))
-            .default_value("288")
-            )
-
+        .arg(
+            Arg::with_name("led_pin")
+                .short("p")
+                .long("pin")
+                .value_name("PIN")
+                .takes_value(true)
+                .validator(|s| u8::from_str(&s).map(|_| ()).map_err(|e| format!("{:?}", e)))
+                .default_value("18"),
+        )
+        .arg(
+            Arg::with_name("led_count")
+                .short("c")
+                .long("count")
+                .value_name("COUNT")
+                .takes_value(true)
+                .validator(|s| {
+                    NonZeroU16::from_str(&s)
+                        .map(|_| ())
+                        .map_err(|e| format!("{:?}", e))
+                })
+                .default_value("288"),
+        )
+        .arg(
+            Arg::with_name("spi")
+                .short("i")
+                .long("spi")
+                .value_name("SPIPATH")
+                .takes_value(true)
+                .default_value("/dev/spidev0.0"),
+        )
+        .arg(
+            Arg::with_name("rst")
+                .short("r")
+                .long("reset")
+                .value_name("RSTPIN")
+                .takes_value(true)
+                .validator(|s| {
+                    NonZeroU8::from_str(&s)
+                        .map(|_| ())
+                        .map_err(|e| format!("{:?}", e))
+                }),
+        )
+        .arg(
+            Arg::with_name("en")
+                .short("e")
+                .long("enable")
+                .value_name("ENPIN")
+                .takes_value(true)
+                .validator(|s| {
+                    NonZeroU8::from_str(&s)
+                        .map(|_| ())
+                        .map_err(|e| format!("{:?}", e))
+                }),
+        )
 }

@@ -20,21 +20,23 @@ pub trait ActiveAudioSource {
         self.recv_timeout(Duration::from_secs(0))
     }
     fn iter(&mut self) -> Iter<'_, Self>
-        where Self: Sized
+    where
+        Self: Sized,
     {
         Iter { src: self }
     }
-    fn try_iter(&mut self) -> TryIter<'_, Self> 
-        where Self: Sized
+    fn try_iter(&mut self) -> TryIter<'_, Self>
+    where
+        Self: Sized,
     {
         TryIter { src: self }
     }
 }
 pub struct Iter<'a, T: ActiveAudioSource> {
-    src: &'a mut  T 
+    src: &'a mut T,
 }
 
-impl<T: ActiveAudioSource> Iterator for Iter<'_, T>{
+impl<T: ActiveAudioSource> Iterator for Iter<'_, T> {
     type Item = StereoSample;
     fn next(&mut self) -> Option<Self::Item> {
         self.src.recv().ok()
@@ -42,9 +44,9 @@ impl<T: ActiveAudioSource> Iterator for Iter<'_, T>{
 }
 
 pub struct TryIter<'a, T: ActiveAudioSource> {
-    src: &'a mut T 
+    src: &'a mut T,
 }
-impl<T: ActiveAudioSource> Iterator for TryIter<'_, T>{
+impl<T: ActiveAudioSource> Iterator for TryIter<'_, T> {
     type Item = StereoSample;
     fn next(&mut self) -> Option<Self::Item> {
         self.src.try_recv().ok()

@@ -43,16 +43,13 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
         if self.senders.len() == 0 {
             return Ok(());
         }
-        //eprintln!("process() received: {:?}", ss);
         let (left, right) = ss.spectrogram(&self.radix);
-        //eprintln!("left() received: {:?}", left);
         let mut msgs = [LedMsg::default(); 9];
         match self.effect {
             Effect::Stereo4FlatStack(alg, invert) => {
                 msgs.copy_from_slice(&self.process_s4fs(left, right, alg, invert))
             }
         }
-        //eprintln!("{:?}", msgs);
         for sender in self.senders.iter_mut() {
             sender.send(&msgs)?;
         }
@@ -61,7 +58,6 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
     #[inline]
     pub fn process_loop(&mut self) -> Error {
         loop {
-            //eprintln!("Process loop");
             if let Err(e) = self.process() {
                 return e;
             }
@@ -140,18 +136,20 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
         ret[0..4].copy_from_slice(&left);
         ret[5..9].copy_from_slice(&right);
         ret[4].cmd = Command::FlatStack(255 - sum);
-        let cur_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros() as u32;
+        let cur_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_micros() as u32;
         for (i, r) in ret.iter_mut().enumerate() {
             r.element = i as u8;
             r.cur_time = cur_time;
         }
-        for (i, r) in  ret[0..4].iter_mut().enumerate() {
+        for (i, r) in ret[0..4].iter_mut().enumerate() {
             r.color = i as u8 + 1;
         }
         for (i, r) in ret[5..9].iter_mut().rev().enumerate() {
             r.color = i as u8 + 1;
         }
-        //println!("{:?} {:?}", l_bins, r_bins);
         ret
     }
 }

@@ -82,7 +82,9 @@ impl ActiveAudioSource for JackSource {
         client.frames_to_time(client.frame_time())
     }
     fn recv(&mut self) -> Result<StereoSample, Error> {
-        self.recv.recv().map_err(|_| Error::Unrecoverable("Audio producer is disconnected".to_string()))
+        self.recv
+            .recv()
+            .map_err(|_| Error::Unrecoverable("Audio producer is disconnected".to_string()))
     }
     fn recv_timeout(&mut self, timeout: Duration) -> Result<StereoSample, Error> {
         self.recv.recv_timeout(timeout).map_err(|x| match x {
