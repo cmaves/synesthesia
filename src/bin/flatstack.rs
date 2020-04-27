@@ -43,6 +43,7 @@ pub fn main() {
     }
 }
 fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
+    let verbose = args.occurrences_of("verbose") as u8;
     match args.value_of("mode").unwrap() {
         "local" => {
             let (sender, recv) = channel(2);
@@ -67,7 +68,7 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
                     let start = Instant::now();
                     let mut renderer = Renderer::new(recv, ctl);
                     renderer.blend = 3;
-                    renderer.verbose = true;
+                    renderer.verbose = verbose;
                     renderer.color_map[2] = Color::YELLOW;
                     renderer.color_map[3] = Color::GREEN;
                     renderer.color_map[4] = Color::BLUE;
@@ -80,7 +81,7 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
                     );
                 })
                 .unwrap();
-            start_av(src, sender);
+            start_av(verbose, src, sender);
         }
         "ham" => {
             let mut chip = Chip::new("/dev/gpiochip0").unwrap();
@@ -94,16 +95,17 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
             let mut rfm = Rfm69::new(rst, en, spi).unwrap();
             rfm.set_bitrate(45000).unwrap();
             let sender = rfm.into_packet_sender(1).unwrap();
-            start_av(src, sender);
+            start_av(verbose, src, sender);
         }
         _ => unimplemented!(),
     }
 }
 
-fn start_av<S: InactiveAudioSource, T: Sender + 'static>(src: S, sender: T) {
+fn start_av<S: InactiveAudioSource, T: Sender + 'static>(verbose: u8, src: S, sender: T) {
     let mut av =
         AudioVisualizer::new(src, Effect::Stereo4FlatStack(Algorithm::Quadratic, false)).unwrap();
     av.senders.push(Box::new(sender));
+    av.verbose = verbose;
     av.process_loop();
 }
 
@@ -200,7 +202,8 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                     NonZeroU8::from_str(&s)
                         .map(|_| ())
                         .map_err(|e| format!("{:?}", e))
-                }),
+                })
+                .default_value("24"),
         )
         .arg(
             Arg::with_name("en")
@@ -212,6 +215,13 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                     NonZeroU8::from_str(&s)
                         .map(|_| ())
                         .map_err(|e| format!("{:?}", e))
-                }),
+                })
+                .default_value("3"),
+        )
+        .arg(
+            Arg::with_name("verbose")
+                .short("v")
+                .long("verbose")
+                .multiple(true),
         )
 }

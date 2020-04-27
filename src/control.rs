@@ -19,6 +19,7 @@ pub struct AudioVisualizer<T: ActiveAudioSource> {
     pub senders: Vec<Box<dyn Sender>>,
     pub effect: Effect,
     radix: Radix4<f32>,
+    pub verbose: u8,
 }
 impl<T: ActiveAudioSource> AudioVisualizer<T> {
     #[inline]
@@ -32,6 +33,7 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
             effect,
             senders: Vec::new(),
             radix: Radix4::new(256, false),
+            verbose: 0,
         })
     }
     pub fn process(&mut self) -> Result<(), Error> {
@@ -48,6 +50,12 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
         match self.effect {
             Effect::Stereo4FlatStack(alg, invert) => {
                 msgs.copy_from_slice(&self.process_s4fs(left, right, alg, invert))
+            }
+        }
+        #[cfg(debug)]
+        {
+            if self.verbose >= 4 {
+                eprintln!("Messages to be send: {:?}", msgs);
             }
         }
         for sender in self.senders.iter_mut() {
