@@ -52,11 +52,8 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
                 msgs.copy_from_slice(&self.process_s4fs(left, right, alg, invert))
             }
         }
-        #[cfg(debug)]
-        {
-            if self.verbose >= 4 {
-                eprintln!("Messages to be send: {:?}", msgs);
-            }
+        if cfg!(debug_assertions) && self.verbose >= 4 {
+            eprintln!("Messages to be send: {:?}", msgs);
         }
         for sender in self.senders.iter_mut() {
             sender.send(&msgs)?;
@@ -123,18 +120,19 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
         let iter = left_i.chain(right_i);
         let mut sum = 0;
         // scale to range of [0, 32] u8 and keep track of total sum
+        eprintln!("l_bin: {:?}\nr_bin: {:?}", l_bins, r_bins);
         match alg {
             Algorithm::Linear => {
                 for (r, f) in iter {
-                    let val = ((f + 40.0) * 2.0 * 0.31).min(31.0).max(0.0).round() as u8;
+                    let val = ((f + 35.0) * 2.0 * 0.31).min(31.0).max(0.0).round() as u8;
                     sum += val + 1;
                     r.cmd = Command::FlatStack(val);
                 }
             }
             Algorithm::Quadratic => {
                 for (r, f) in iter {
-                    let val = ((f + 40.0) / 5.0 * 0.31).min(31.0).max(0.0).round();
-                    let val = (val * val).round() as u8;
+                    let val = ((f + 35.0) / 5.0).max(0.0);
+                    let val = (val * val * 0.31).min(31.0).round() as u8;
                     sum += val + 1;
                     r.cmd = Command::FlatStack(val);
                 }

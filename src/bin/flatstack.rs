@@ -92,9 +92,13 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
                 .get_line(u32::from_str(args.value_of("rst").unwrap()).unwrap())
                 .unwrap();
             let spi = Spidev::open(args.value_of("spi").unwrap()).unwrap();
+            let power = i8::from_str(args.value_of("power").unwrap()).unwrap();
+            let bitrate = u32::from_str(args.value_of("bitrate").unwrap()).unwrap();
             let mut rfm = Rfm69::new(rst, en, spi).unwrap();
-            rfm.set_bitrate(45000).unwrap();
-            let sender = rfm.into_packet_sender(1).unwrap();
+            rfm.set_bitrate(bitrate).unwrap();
+            rfm.set_power(power).unwrap();
+            let mut sender = rfm.into_packet_sender(1).unwrap();
+            sender.set_verbose(verbose).unwrap();
             start_av(verbose, src, sender);
         }
         _ => unimplemented!(),
@@ -223,5 +227,37 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 .short("v")
                 .long("verbose")
                 .multiple(true),
+        )
+        .arg(
+            Arg::with_name("power")
+                .short("o")
+                .long("power")
+                .value_name("LEVEL")
+                .takes_value(true)
+                .validator(|s| {
+                    let power = i8::from_str(&s).map_err(|e| format!("{:?}", e))?;
+                    if -18 <= power && power <= 20 {
+                        Ok(())
+                    } else {
+                        Err("Power must be between [-18,20].".to_string())
+                    }
+                })
+                .default_value("13")
+                .allow_hyphen_values(true),
+        )
+        .arg(
+            Arg::with_name("bitrate")
+                .long("bitrate")
+                .value_name("BPS")
+                .takes_value(true)
+                .validator(|s| {
+                    let rate = u32::from_str(&s).map_err(|e| format!("{:?}", e))?;
+                    if rate <= 300_000 {
+                        Ok(())
+                    } else {
+                        Err("Rate cannot be greater than 300_000 bps.".to_string())
+                    }
+                })
+                .default_value("4800"),
         )
 }

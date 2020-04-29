@@ -16,11 +16,16 @@ default = []
 rpi = ["ecp/rpi"]
 
 [dependencies]
-ecp = {git="https://github.com/cmaves/ecp.git"}
-ham = {git="https://github.com/cmaves/ham.git", optional=true }
+#ecp = {git="https://github.com/cmaves/ecp.git"}
+ecp = {path="/home/cmaves/ecp"}
+#ham = {git="https://github.com/cmaves/ham.git", optional=true }
+ham = {path="/home/cmaves/ham", optional=true }
 jack = { version = "0.6.0", optional = true }
 clap = { version = "2.33.0", optional = true }
 rustfft = "3.0.1"
 lazy_static = "1.4.0"
 gpio-cdev = "0.2.0"
 spidev = "0.4.0"
+
+[profile.release]
+lto = true
