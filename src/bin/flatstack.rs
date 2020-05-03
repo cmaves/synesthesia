@@ -110,7 +110,7 @@ fn start_av<S: InactiveAudioSource, T: Sender + 'static>(verbose: u8, src: S, se
         AudioVisualizer::new(src, Effect::Stereo4FlatStack(Algorithm::Quadratic, false)).unwrap();
     av.senders.push(Box::new(sender));
     av.verbose = verbose;
-    av.process_loop();
+    panic!("Audio processing failed: {:?}", av.process_loop());
 }
 
 fn parser<'a, 'b>() -> App<'a, 'b> {
