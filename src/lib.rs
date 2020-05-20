@@ -15,7 +15,6 @@ pub enum Error {
     Timeout(String),
     #[cfg(feature = "jack")]
     Jack(jack::Error),
-    #[cfg(any(feature = "ecp", feature = "rpi"))]
     Ecp(ecp::Error),
 }
 
@@ -26,7 +25,6 @@ impl From<jack::Error> for Error {
     }
 }
 
-#[cfg(any(feature = "ecp", feature = "rpi"))]
 impl From<ecp::Error> for Error {
     fn from(err: ecp::Error) -> Self {
         Error::Ecp(err)

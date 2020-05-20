@@ -120,7 +120,7 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
         let iter = left_i.chain(right_i);
         let mut sum = 0;
         // scale to range of [0, 32] u8 and keep track of total sum
-        eprintln!("l_bin: {:?}\nr_bin: {:?}", l_bins, r_bins);
+        //eprintln!("l_bin: {:?}\nr_bin: {:?}", l_bins, r_bins);
         match alg {
             Algorithm::Linear => {
                 for (r, f) in iter {

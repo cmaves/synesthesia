@@ -1,21 +1,36 @@
 use clap::{App, Arg, ArgMatches};
-use ecp::color::Color;
-use ecp::controller::{rs_ws281x, Renderer};
-use ecp::{channel, Sender};
+use ecp::color::Color; use ecp::{channel, Sender};
+use ecp::Error as EcpError;
 use gpio_cdev::Chip;
-use ham::rfm69::Rfm69;
-use ham::IntoPacketSender;
-use jack;
+
 use spidev::Spidev;
+use std::convert::Infallible;
 use std::num::{NonZeroU16, NonZeroU8};
 use std::str::FromStr;
 use std::thread::Builder;
 use std::time::{Duration, Instant};
 use synesthesia;
+use synesthesia::Error;
 use synesthesia::audio::InactiveAudioSource;
 use synesthesia::control::{Algorithm, AudioVisualizer, Effect};
 
+#[cfg(feature = "bluetooth")]
+use ecp::bluetooth::BluetoothSender;
+
+#[cfg(feature = "jack")]
+use jack;
+
+#[cfg(feature = "rpi")] 
+use ecp::controller::{rs_ws281x, Renderer};
+
+#[cfg(feature = "ham")]
+use ham::rfm69::Rfm69;
+
+#[cfg(feature = "ham")]
+use ham::IntoPacketSender;
+
 enum Src {
+	#[cfg(feature = "jack")]
     Jack(jack::Client),
     Pulse,
 }
@@ -31,6 +46,7 @@ pub fn main() {
     match args.value_of("source").unwrap() {
         //"jack" =>  jack::Client::new(args.value_of("flatstack").unwrap(), jack::ClientOptions::NO_START_SERVER).unwrap().0),
         "jack" => {
+			#[cfg(feature = "jack")] {
             let src = jack::Client::new(
                 args.value_of("clientname").unwrap(),
                 jack::ClientOptions::NO_START_SERVER,
@@ -38,7 +54,9 @@ pub fn main() {
             .unwrap()
             .0;
             start_sender(args, src)
-        }
+			}
+			if ! cfg!(feature = "jack") { panic!("Jack support was not enabled at compile time."); }
+		},
         _ => unimplemented!(),
     }
 }
@@ -46,6 +64,7 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
     let verbose = args.occurrences_of("verbose") as u8;
     match args.value_of("mode").unwrap() {
         "local" => {
+			#[cfg(feature = "rpi")] {
             let (sender, recv) = channel(2);
             let pin = u8::from_str(args.value_of("led_pin").unwrap()).unwrap() as i32;
             let count = u16::from_str(args.value_of("led_count").unwrap()).unwrap() as i32;
@@ -82,8 +101,11 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
                 })
                 .unwrap();
             start_av(verbose, src, sender);
+			}
+			if ! cfg!(feature = "rpi") { panic!("Local rendering on an RPi was not enabled at compile time."); }
         }
         "ham" => {
+			#[cfg(feature = "ham")] {
             let mut chip = Chip::new("/dev/gpiochip0").unwrap();
             let en = chip
                 .get_line(u32::from_str(args.value_of("en").unwrap()).unwrap())
@@ -100,7 +122,18 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
             let mut sender = rfm.into_packet_sender(1).unwrap();
             sender.set_verbose(verbose).unwrap();
             start_av(verbose, src, sender);
-        }
+			}
+			if ! cfg!(feature = "ham") { panic!("Sending using HamSender was not enabled at compile time."); }
+
+        },
+		"bluetooth" => {
+			#[cfg(feature = "bluetooth")] {
+			let bt_dev = args.value_of("bt-dev").unwrap().to_string();
+			let bt_sender = BluetoothSender::new(bt_dev).unwrap();
+			start_av(verbose, src, bt_sender);
+			}
+			if ! cfg!(feature = "bluetooth") { panic!("Sending using bluetooth was not enabled at compile time."); }
+		},
         _ => unimplemented!(),
     }
 }
@@ -110,7 +143,7 @@ fn start_av<S: InactiveAudioSource, T: Sender + 'static>(verbose: u8, src: S, se
         AudioVisualizer::new(src, Effect::Stereo4FlatStack(Algorithm::Quadratic, false)).unwrap();
     av.senders.push(Box::new(sender));
     av.verbose = verbose;
-    panic!("Audio processing failed: {:?}", av.process_loop());
+    panic!("Audio processing failed: {:?}", av.process_loop())
 }
 
 fn parser<'a, 'b>() -> App<'a, 'b> {
@@ -163,7 +196,7 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 .short("m")
                 .long("mode")
                 .value_name("MODE")
-                .possible_values(&["local", "ham"])
+                .possible_values(&["local", "ham", "bluetooth"])
                 .default_value("local"),
         )
         .arg(
@@ -260,4 +293,11 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 })
                 .default_value("4800"),
         )
+		.arg(
+			Arg::with_name("bt-dev")
+				.long("bt-dev")
+				.short("d")
+				.takes_value(true)
+				.default_value("/org/bluez/hci0")
+		)
 }
