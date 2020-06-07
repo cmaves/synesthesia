@@ -10,10 +10,10 @@ pub struct EventHandler;
 impl NotificationHandler for EventHandler {
     #[inline]
     fn xrun(&mut self, client: &Client) -> Control {
-        eprintln!(
+        /*eprintln!(
             "Overrun occured at {}",
             client.frames_to_time(client.frame_time())
-        );
+        );*/
         Control::Continue
     }
 }
