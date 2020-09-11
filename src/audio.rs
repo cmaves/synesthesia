@@ -6,7 +6,12 @@ use std::time::Duration;
 
 pub trait InactiveAudioSource {
     type ActiveType: ActiveAudioSource;
-    fn activate(self) -> Result<Self::ActiveType, Error>;
+    fn activate(self, options: AudioSourceOptions) -> Result<Self::ActiveType, Error>;
+}
+
+#[derive(Clone,Copy)]
+pub struct AudioSourceOptions {
+	pub stats: u16
 }
 
 pub trait ActiveAudioSource {

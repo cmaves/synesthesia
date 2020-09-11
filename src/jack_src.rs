@@ -1,19 +1,55 @@
-use crate::audio::{ActiveAudioSource, InactiveAudioSource, StereoSample};
+use crate::audio::{ActiveAudioSource, InactiveAudioSource, StereoSample, AudioSourceOptions};
 use crate::Error;
 use jack::{AsyncClient, AudioIn, Client, Control, NotificationHandler};
 use std::mem;
 use std::sync::mpsc;
 use std::thread::spawn;
-use std::time::Duration;
+use std::time::{Instant, Duration};
 
-pub struct EventHandler;
+pub struct EventHandler {
+	target_dur: Duration,
+	stats_start_total: Instant,
+	stats_period_start: Instant,
+	frames_dropped: usize,
+	frames_dropped_total: usize
+
+}
+impl EventHandler {
+	fn new(stats: u16) -> Self {
+		let now = Instant::now();
+		Self {
+			target_dur: Duration::from_secs(stats as u64),
+			stats_period_start: now,
+			stats_start_total: now,
+			frames_dropped: 0,
+			frames_dropped_total: 0
+		}
+	}
+}
 impl NotificationHandler for EventHandler {
     #[inline]
     fn xrun(&mut self, client: &Client) -> Control {
-        /*eprintln!(
-            "Overrun occured at {}",
-            client.frames_to_time(client.frame_time())
-        );*/
+		self.frames_dropped += 1;
+		self.frames_dropped_total += 1;
+
+		let now = Instant::now();
+		let since = now.duration_since(self.stats_period_start);
+		if since > self.target_dur {
+			let since_secs = since.as_secs_f64();
+			let fd_f64  = self.frames_dropped as f64;
+			let dps = fd_f64 as f64 / since_secs;
+			let loss = fd_f64 / (since_secs * (48000.0 / 256.0)) * 100.0;
+			eprintln!("Jack Audio frame stats:\n\tPeriod length: {:.1} secs, drops: {}, {:.1} dps, {:.1}% loss", since_secs, self.frames_dropped, dps, loss);
+
+			let since_secs_total = now.duration_since(self.stats_start_total).as_secs_f64();
+			let fd_f64  = self.frames_dropped_total as f64;
+			let dps = fd_f64 as f64 / since_secs_total;
+			let loss = fd_f64 / (since_secs_total * (48000.0 / 756.0 * 100.0));
+			eprintln!("\tTotal drops: {} drops, {:.1} dps, {:.1}% loss\n", self.frames_dropped_total, dps, loss);
+			
+			self.stats_period_start = now;
+			self.frames_dropped = 0;
+		}
         Control::Continue
     }
 }
@@ -47,7 +83,7 @@ impl jack::ProcessHandler for FrameHandler {
 }
 impl InactiveAudioSource for Client {
     type ActiveType = JackSource;
-    fn activate(self) -> Result<Self::ActiveType, Error> {
+    fn activate(self, options: AudioSourceOptions) -> Result<Self::ActiveType, Error> {
         let left = self.register_port("synesthesia_left", AudioIn)?;
         let right = self.register_port("synesthesia_right", AudioIn)?;
         let (sender, recv) = mpsc::sync_channel(1);
@@ -62,7 +98,8 @@ impl InactiveAudioSource for Client {
             sender,
             sample_size: 768,
         };
-        let a_client = self.activate_async(EventHandler, handler)?;
+		let ev = EventHandler::new(options.stats);
+        let a_client = self.activate_async(ev, handler)?;
         Ok(JackSource { a_client, recv })
     }
 }

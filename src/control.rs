@@ -1,4 +1,4 @@
-use crate::audio::{ActiveAudioSource, InactiveAudioSource, WEIGHT};
+use crate::audio::{ActiveAudioSource, InactiveAudioSource, WEIGHT, AudioSourceOptions};
 use crate::Error;
 use ecp::{Command, LedMsg, Sender};
 use rustfft::algorithm::Radix4;
@@ -23,11 +23,11 @@ pub struct AudioVisualizer<T: ActiveAudioSource> {
 }
 impl<T: ActiveAudioSource> AudioVisualizer<T> {
     #[inline]
-    pub fn new<I>(inactive: I, effect: Effect) -> Result<Self, Error>
+    pub fn new<I>(inactive: I, effect: Effect, options: AudioSourceOptions) -> Result<Self, Error>
     where
         I: InactiveAudioSource<ActiveType = T>,
     {
-        let active = inactive.activate()?;
+        let active = inactive.activate(options)?;
         Ok(AudioVisualizer {
             active,
             effect,
@@ -46,10 +46,10 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
             return Ok(());
         }
         let (left, right) = ss.spectrogram(&self.radix);
-        let mut msgs = [LedMsg::default(); 9];
+        let mut msgs;
         match self.effect {
             Effect::Stereo4FlatStack(alg, invert) => {
-                msgs.copy_from_slice(&self.process_s4fs(left, right, alg, invert))
+				msgs = self.process_s4fs(left, right, alg, invert)
             }
         }
         if cfg!(debug_assertions) && self.verbose >= 4 {
