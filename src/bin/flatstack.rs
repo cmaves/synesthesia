@@ -1,22 +1,23 @@
+use async_std::task::block_on;
+
 use clap::{App, Arg, ArgMatches};
-use ecp::color::Color;
-use ecp::Error as EcpError;
-use ecp::{channel, Sender};
 use gpio_cdev::Chip;
+use lecp::{channel, Sender};
 
 use spidev::Spidev;
-use std::convert::Infallible;
 use std::num::{NonZeroU16, NonZeroU8};
 use std::str::FromStr;
 use std::thread::Builder;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use synesthesia;
-use synesthesia::audio::{InactiveAudioSource, AudioSourceOptions};
+use synesthesia::audio::{AudioSourceOptions, InactiveAudioSource};
 use synesthesia::control::{Algorithm, AudioVisualizer, Effect};
-use synesthesia::Error;
 
 #[cfg(feature = "bluetooth")]
-use ecp::bluetooth::{BluetoothSender, BleOptions};
+use lecp::bluetooth::BluetoothSender;
+
+#[cfg(feature = "bluetooth")]
+use rustable::MAC;
 
 #[cfg(feature = "jack")]
 use jack;
@@ -30,18 +31,7 @@ use ham::rfm69::Rfm69;
 #[cfg(feature = "ham")]
 use ham::IntoPacketSender;
 
-enum Src {
-    #[cfg(feature = "jack")]
-    Jack(jack::Client),
-    Pulse,
-}
-enum Mode {
-    Local,
-    Err,
-}
 pub fn main() {
-    #[cfg(any(feature = "ecp", feature = "rpi"))]
-    eprintln!("feature enabled");
     let parser = parser();
     let args = parser.get_matches();
     match args.value_of("source").unwrap() {
@@ -66,12 +56,12 @@ pub fn main() {
 }
 fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
     let verbose = args.occurrences_of("verbose") as u8;
-	let sendstats = if args.is_present("sendstats") {
-		u16::from_str(args.value_of("sendstats").unwrap()).unwrap()
-	} else {
-		0
-	};
-	let aso = AudioSourceOptions { stats: sendstats };
+    let sendstats = if args.is_present("sendstats") {
+        u16::from_str(args.value_of("sendstats").unwrap()).unwrap()
+    } else {
+        0
+    };
+    let aso = AudioSourceOptions { stats: sendstats };
     match args.value_of("mode").unwrap() {
         "local" => {
             #[cfg(feature = "rpi")]
@@ -135,7 +125,8 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
                 rfm.set_power(power).unwrap();
                 let mut sender = rfm.into_packet_sender(1).unwrap();
                 sender.set_verbose(verbose).unwrap();
-                start_av(verbose, src, sender, aso);
+                unimplemented!();
+                //start_av(verbose, src, sender, aso);
             }
             if !cfg!(feature = "ham") {
                 panic!("Sending using HamSender was not enabled at compile time.");
@@ -144,9 +135,12 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
         "bluetooth" => {
             #[cfg(feature = "bluetooth")]
             {
-                let bt_dev = args.value_of("bt-dev").unwrap().to_string();
-				let options = BleOptions { stats: sendstats, verbose };
-                let bt_sender = BluetoothSender::new(bt_dev, options).unwrap();
+                let bt_dev = u8::from_str(args.value_of("bt-dev").unwrap()).unwrap();
+                let mac_arg = args
+                    .value_of("mac")
+                    .expect("--mac MAC is require for bluetooth!");
+                let mac = MAC::from_str(mac_arg).expect("MAC argument was invalid!");
+                let bt_sender = block_on(BluetoothSender::new(bt_dev, mac)).unwrap();
                 start_av(verbose, src, bt_sender, aso);
             }
             if !cfg!(feature = "bluetooth") {
@@ -157,24 +151,33 @@ fn start_sender<T: InactiveAudioSource>(args: ArgMatches, src: T) {
     }
 }
 
-fn start_av<S: InactiveAudioSource, T: Sender + 'static>(verbose: u8, src: S, sender: T, aso: AudioSourceOptions) {
-    let mut av =
-        AudioVisualizer::new(src, Effect::Stereo4FlatStack(Algorithm::Quadratic, false), aso).unwrap();
+fn start_av<S: InactiveAudioSource, T: Sender + 'static>(
+    verbose: u8,
+    src: S,
+    sender: T,
+    aso: AudioSourceOptions,
+) {
+    let mut av = AudioVisualizer::new(
+        src,
+        Effect::Stereo4FlatStack(Algorithm::Quadratic, false),
+        aso,
+    )
+    .unwrap();
     av.senders.push(Box::new(sender));
     av.verbose = verbose;
     panic!("Audio processing failed: {:?}", av.process_loop())
 }
 
 fn parser<'a, 'b>() -> App<'a, 'b> {
-	let default_mode = if cfg!(feature = "rpi") {
-		"local"	
-	} else if cfg!(feature = "bluetooth") {
-		"bluetooth"
-	} else if cfg!(feature = "ham") {
-		"ham"
-	} else {
-		"local"
-	};
+    let default_mode = if cfg!(feature = "rpi") {
+        "local"
+    } else if cfg!(feature = "bluetooth") {
+        "bluetooth"
+    } else if cfg!(feature = "ham") {
+        "ham"
+    } else {
+        "local"
+    };
     App::new("Flat Stack")
         .version("0.1")
         .author("Curtis Maves <curtismaves@gmail.com")
@@ -328,11 +331,16 @@ fn parser<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true)
                 .default_value("/org/bluez/hci0"),
         )
-		.arg(Arg::with_name("sendstats")
-				.long("sendstats")
-				.value_name("SECS")
-				.takes_value(true)
-				.validator(|s| u16::from_str(&s).map_err(|e| format!("{:?}", e)).map(|_| ()))
-				.default_value("60")
-		)
+        .arg(
+            Arg::with_name("sendstats")
+                .long("sendstats")
+                .value_name("SECS")
+                .takes_value(true)
+                .validator(|s| {
+                    u16::from_str(&s)
+                        .map_err(|e| format!("{:?}", e))
+                        .map(|_| ())
+                })
+                .default_value("60"),
+        )
 }

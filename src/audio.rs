@@ -9,9 +9,9 @@ pub trait InactiveAudioSource {
     fn activate(self, options: AudioSourceOptions) -> Result<Self::ActiveType, Error>;
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone, Copy)]
 pub struct AudioSourceOptions {
-	pub stats: u16
+    pub stats: u16,
 }
 
 pub trait ActiveAudioSource {

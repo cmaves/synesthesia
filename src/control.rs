@@ -1,9 +1,8 @@
-use crate::audio::{ActiveAudioSource, InactiveAudioSource, WEIGHT, AudioSourceOptions};
+use crate::audio::{ActiveAudioSource, AudioSourceOptions, InactiveAudioSource, WEIGHT};
 use crate::Error;
-use ecp::{Command, LedMsg, Sender};
+use lecp::{Command, LedMsg, Sender};
 use rustfft::algorithm::Radix4;
 use std::cmp::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Copy)]
 pub enum Algorithm {
@@ -49,13 +48,17 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
         let mut msgs;
         match self.effect {
             Effect::Stereo4FlatStack(alg, invert) => {
-				msgs = self.process_s4fs(left, right, alg, invert)
+                msgs = self.process_s4fs(left, right, alg, invert)
             }
         }
         if cfg!(debug_assertions) && self.verbose >= 4 {
             eprintln!("Messages to be send: {:?}", msgs);
         }
         for sender in self.senders.iter_mut() {
+            let cur_time = sender.get_time();
+            for msg in msgs.iter_mut() {
+                msg.time = cur_time;
+            }
             sender.send(&msgs)?;
         }
         Ok(())
@@ -142,13 +145,8 @@ impl<T: ActiveAudioSource> AudioVisualizer<T> {
         ret[0..4].copy_from_slice(&left);
         ret[5..9].copy_from_slice(&right);
         ret[4].cmd = Command::FlatStack(255 - sum);
-        let cur_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as u32;
         for (i, r) in ret.iter_mut().enumerate() {
             r.element = i as u8;
-            r.cur_time = cur_time;
         }
         for (i, r) in ret[0..4].iter_mut().enumerate() {
             r.color = i as u8 + 1;

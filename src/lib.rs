@@ -4,10 +4,10 @@ pub mod control;
 pub mod jack_src;
 pub mod midi;
 
-#[cfg(any(feature = "ecp", feature = "rpi"))]
-use ecp;
 #[cfg(feature = "jack")]
 use jack;
+#[cfg(any(feature = "ecp", feature = "rpi"))]
+use lecp;
 
 #[derive(Debug)]
 pub enum Error {
@@ -15,7 +15,7 @@ pub enum Error {
     Timeout(String),
     #[cfg(feature = "jack")]
     Jack(jack::Error),
-    Ecp(ecp::Error),
+    Lecp(lecp::Error),
 }
 
 #[cfg(feature = "jack")]
@@ -25,9 +25,9 @@ impl From<jack::Error> for Error {
     }
 }
 
-impl From<ecp::Error> for Error {
-    fn from(err: ecp::Error) -> Self {
-        Error::Ecp(err)
+impl From<lecp::Error> for Error {
+    fn from(err: lecp::Error) -> Self {
+        Error::Lecp(err)
     }
 }
 
